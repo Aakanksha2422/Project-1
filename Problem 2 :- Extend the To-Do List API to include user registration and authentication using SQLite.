@@ -1,0 +1,81 @@
+From flask import Flask, request
+From flask_restful import Api, Resource
+From flask_sqlalchemy import SQLAlchemy
+From flask_bcrypt import Bcrypt
+From flask_jwt_extended import JWTManager, create_access_token, 
+jwt_required, get_jwt_identity
+App = Flask(__name__)
+App.config[‘SQLALCHEMY_DATABASE_URI’] = ‘sqlite:///todos.db’
+App.config[‘SQLALCHEMY_TRACK_MODIFICATIONS’] = False
+App.config[‘SECRET_KEY’] = ‘your-secret-key’ # Change this to a strong, unique 
+key
+Api = Api(app)
+Db = SQLAlchemy(app)
+Bcrypt = Bcrypt(app)
+Jwt = JWTManager(app)
+Class User(db.Model):
+ Id = db.Column(db.Integer, primary_key=True)
+ Username = db.Column(db.String(50), unique=True, nullable=False)
+ Password = db.Column(db.String(60), nullable=False)
+ Todos = db.relationship(‘Todo’, backref=’user’, lazy=True)
+Class Todo(db.Model):
+ Id = db.Column(db.Integer, primary_key=True)
+ Title = db.Column(db.String(50), nullable=False)
+ Description = db.Column(db.String(200))
+ Done = db.Column(db.Boolean, default=False)
+ User_id = db.Column(db.Integer, db.ForeignKey(‘user.id’), nullable=False)
+# Create the database tables
+Db.create_all()
+# User Registration Resource
+Class UserRegistration(Resource):
+ Def post(self):
+ Data = request.get_json()
+ Hashed_password = 
+bcrypt.generate_password_hash(data[‘password’]).decode(‘utf-8’)
+ New_user = User(username=data[‘username’], 
+password=hashed_password)
+ Db.session.add(new_user)
+ Db.session.commit()
+ Return {‘message’: ‘User created successfully’}, 201
+# User Login Resource
+Class UserLogin(Resource):
+ Def post(self):
+ Data = request.get_json()
+ User = User.query.filter_by(username=data[‘username’]).first()
+ If user and bcrypt.check_password_hash(user.password, 
+data[‘password’]):
+ Access_token = create_access_token(identity=user.id)
+ Return {‘access_token’: access_token}
+ Else:
+ Return {‘message’: ‘Invalid credentials’}, 401
+# Todo Resource
+Class TodoResource(Resource):
+ @jwt_required()
+ Def get(self):
+ Current_user = get_jwt_identity()
+ Todos = Todo.query.filter_by(user_id=current_user).all()
+ Todo_list = []
+ For todo in todos:
+ Todo_list.append({
+ ‘id’: todo.id,
+ ‘title’: todo.title,
+ ‘description’: todo.description,
+ ‘done’: todo.done
+ })
+ Return {‘todos’: todo_list}
+ @jwt_required()
+ Def post(self):
+ Current_user = get_jwt_identity()
+ Data = request.get_json()
+ New_todo = Todo(title=data[‘title’], description=data.get(‘description’, ‘’), 
+user_id=current_user)
+ Db.session.add(new_todo)
+ Db.session.commit()
+ Return {‘message’: ‘Todo created successfully’}, 201
+# Add resources to the API
+Api.add_resource(UserRegistration, ‘/register’)
+Api.add_resource(UserLogin, ‘/login’)
+Api.add_resource(TodoResource, ‘/todos’)
+# Run the app
+If __name__ == ‘__main__’:
+ App.run(debug=True)
